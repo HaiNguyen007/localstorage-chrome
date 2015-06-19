@@ -1,5 +1,7 @@
 'use strict';
 
+require('./chromeMocks');
+
 var tape   = require('tape');
 var localstorage = require('../');
 var testCommon = require('./testCommon');
@@ -23,4 +25,3 @@ require('abstract-leveldown/abstract/ranges-test').all(localstorage, tape, testC
 require('abstract-leveldown/abstract/batch-test').all(localstorage, tape, testCommon);
 
 require('./custom-tests.js').all(localstorage, tape, testCommon);
-

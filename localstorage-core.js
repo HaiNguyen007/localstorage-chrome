@@ -1,5 +1,6 @@
 'use strict';
-
+/* global chrome */
+/* eslint-disable no-underscore-dangle */
 //
 // Class that should contain everything necessary to interact
 // with localStorage as a generic key-value store.
@@ -11,16 +12,9 @@
 // see http://stackoverflow.com/a/15349865/680742
 var nextTick = global.setImmediate || process.nextTick;
 
-function callbackify(callback, fun) {
-  var val;
-  var err;
-  try {
-    val = fun();
-  } catch (e) {
-    err = e;
-  }
+function nt(callback, args) {
   nextTick(function () {
-    callback(err, val);
+    callback.apply(this, args);
   });
 }
 
@@ -34,50 +28,81 @@ function LocalStorageCore(dbname) {
 
 LocalStorageCore.prototype.getKeys = function (callback) {
   var self = this;
-  callbackify(callback, function () {
+  chrome.storage.local.get(null, function (obj) {
+    var err = chrome.runtime.lastError;
+    if (err) {
+      return nt(callback, [err]);
+    }
+
     var keys = [];
     var prefixLen = self._prefix.length;
-    var i = -1;
-    var len = window.localStorage.length;
-    while (++i < len) {
-      var fullKey = window.localStorage.key(i);
-      if (fullKey.substring(0, prefixLen) === self._prefix) {
-        keys.push(fullKey.substring(prefixLen));
+
+    Object.keys(obj).forEach(function (key) {
+      if (key.substring(0, prefixLen) === self._prefix) {
+        keys.push(key.substring(prefixLen));
       }
-    }
-    keys.sort();
-    return keys;
+    });
+
+    return nt(callback, [null, keys.sort()]);
+
   });
 };
 
 LocalStorageCore.prototype.put = function (key, value, callback) {
   var self = this;
-  callbackify(callback, function () {
-    window.localStorage.setItem(self._prefix + key, value);
+  var obj = {};
+  obj[self._prefix + key] = value.toString();
+  chrome.storage.local.set(obj, function () {
+    var err = chrome.runtime.lastError;
+    nt(callback, [err]);
   });
 };
 
 LocalStorageCore.prototype.get = function (key, callback) {
   var self = this;
-  callbackify(callback, function () {
-    return window.localStorage.getItem(self._prefix + key);
+  chrome.storage.local.get(self._prefix + key, function (obj) {
+    var err = chrome.runtime.lastError, value = obj[self._prefix + key];
+    nt(callback, [err, value]);
   });
 };
 
 LocalStorageCore.prototype.remove = function (key, callback) {
   var self = this;
-  callbackify(callback, function () {
-    window.localStorage.removeItem(self._prefix + key);
+  key = self._prefix + key;
+
+  chrome.storage.local.get(key, function (obj) { // check exist
+    if (chrome.runtime.lastError) {
+      return nt(callback, [chrome.runtime.lastError]);
+    }
+    if (Object.keys(obj).indexOf(key) === -1) {
+      return nt(callback, [new Error(key + 'not found.')]);
+    }
+
+    chrome.storage.local.remove(key, function () {
+      var err = chrome.runtime.lastError;
+      nt(callback, [err]);
+    });
   });
 };
 
 LocalStorageCore.destroy = function (dbname, callback) {
   var prefix = createPrefix(dbname);
-  callbackify(callback, function () {
-    Object.keys(localStorage).forEach(function (key) {
+  chrome.storage.local.get(null, function (obj) {
+    var err = chrome.runtime.lastError;
+    if (err) {
+      return nt(callback, [err]);
+    }
+
+    var needRemove = [];
+    Object.keys(obj).forEach(function (key) {
       if (key.substring(0, prefix.length) === prefix) {
-        localStorage.removeItem(key);
+        needRemove.push(key);
       }
+    });
+
+    chrome.storage.local.remove(needRemove, function () {
+      var e = chrome.runtime.lastError;
+      nt(callback, [e]);
     });
   });
 };
